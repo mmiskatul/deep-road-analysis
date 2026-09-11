@@ -1,0 +1,22 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Generated analysis outputs
+output/
+runs/
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
