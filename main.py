@@ -144,6 +144,8 @@ def process_video(
     show_danger_zone: bool = True,
     show_hud: bool = True,
     track: bool = True,
+    linkedin_format: bool = False,
+    max_frames: int = 0,
 ):
     """Processes video file or webcam stream with persistent tracking and video-level analytics."""
     cap = cv2.VideoCapture(video_source)
@@ -154,7 +156,10 @@ def process_video(
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps_in = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if not str(video_source).isdigit() else 0
+    raw_total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if not str(video_source).isdigit() else 0
+    total_frames = min(raw_total, max_frames) if (max_frames > 0 and raw_total > 0) else (max_frames if max_frames > 0 else raw_total)
+
+    out_w, out_h = (1080, 1080) if linkedin_format else (width, height)
 
     writer = None
     if output_path:
@@ -162,13 +167,13 @@ def process_video(
         # Try best codecs for Windows compatibility
         for codec in ["mp4v", "avc1", "XVID"]:
             fourcc = cv2.VideoWriter_fourcc(*codec)
-            temp_writer = cv2.VideoWriter(output_path, fourcc, fps_in, (width, height))
+            temp_writer = cv2.VideoWriter(output_path, fourcc, fps_in, (out_w, out_h))
             if temp_writer.isOpened():
                 writer = temp_writer
                 break
         if writer is None or not writer.isOpened():
             # Fallback to mp4v
-            writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps_in, (width, height))
+            writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps_in, (out_w, out_h))
 
     frame_idx = 0
     start_total = time.time()
@@ -210,6 +215,8 @@ def process_video(
         while True:
             ret, frame = cap.read()
             if not ret:
+                break
+            if max_frames > 0 and frame_idx >= max_frames:
                 break
 
             frame_idx += 1
@@ -271,8 +278,13 @@ def process_video(
                     "hazards": len(analytics["proximity_alerts"]),
                 })
 
+            if linkedin_format:
+                display_frame = analyzer.render_linkedin_canvas(annotated, analytics, canvas_size=1080)
+            else:
+                display_frame = annotated
+
             if writer:
-                writer.write(annotated)
+                writer.write(display_frame)
 
             if use_rich_progress and progress:
                 progress.update(task_id, advance=1)
@@ -280,7 +292,7 @@ def process_video(
                 print(f"  -> Frame {frame_idx}/{total_frames} ({int(frame_idx/total_frames*100)}%) - {fps_proc:.1f} FPS")
 
             if show_view:
-                cv2.imshow("Deep Road Analysis - Video", annotated)
+                cv2.imshow("Deep Road Analysis - Video", display_frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     print("[INFO] User stopped playback.")
                     break
@@ -387,6 +399,8 @@ def main():
     parser.add_argument("--no-hud", action="store_true", help="Disable top telemetry banner")
     parser.add_argument("--view", action="store_true", help="Display visual preview window")
     parser.add_argument("--export-json", action="store_true", default=True, help="Save structured analytics JSON")
+    parser.add_argument("--linkedin", action="store_true", help="Format output for LinkedIn (1:1 1080x1080 with branded title card & live telemetry)")
+    parser.add_argument("--max-frames", type=int, default=0, help="Maximum number of frames to process (0 = all)")
     parser.add_argument("--web", action="store_true", help="Launch interactive Streamlit web dashboard")
 
     args = parser.parse_args()
@@ -408,7 +422,10 @@ def main():
     source = args.source
     if not source:
         # Auto-detect best available media
-        if os.path.exists("sample_traffic.mp4"):
+        if os.path.exists("new video .mov"):
+            source = "new video .mov"
+            print(f"[INFO] No --source specified. Auto-detected video: {source}")
+        elif os.path.exists("sample_traffic.mp4"):
             source = "sample_traffic.mp4"
             print(f"[INFO] No --source specified. Auto-detected video: {source}")
         elif os.path.exists("sample_road.jpg"):
@@ -438,13 +455,16 @@ def main():
             show_view=True,
             show_danger_zone=not args.no_danger_zone,
             show_hud=not args.no_hud,
+            linkedin_format=args.linkedin,
+            max_frames=args.max_frames,
         )
     elif os.path.isfile(source):
         ext = Path(source).suffix.lower()
         base_name = Path(source).stem
 
         if ext in video_extensions:
-            out_vid = os.path.join(args.output_dir, f"{base_name}_analyzed.mp4") if not args.no_save else None
+            suffix = "_linkedin.mp4" if args.linkedin else "_analyzed.mp4"
+            out_vid = os.path.join(args.output_dir, f"{base_name}{suffix}") if not args.no_save else None
             out_json = os.path.join(args.output_dir, f"{base_name}_video_analytics.json") if args.export_json else None
             process_video(
                 analyzer,
@@ -456,19 +476,28 @@ def main():
                 show_danger_zone=not args.no_danger_zone,
                 show_hud=not args.no_hud,
                 track=True,
+                linkedin_format=args.linkedin,
+                max_frames=args.max_frames,
             )
         elif ext in image_extensions:
-            out_img = os.path.join(args.output_dir, f"{base_name}_analyzed.jpg") if not args.no_save else None
+            suffix = "_linkedin.jpg" if args.linkedin else "_analyzed.jpg"
+            out_img = os.path.join(args.output_dir, f"{base_name}{suffix}") if not args.no_save else None
             out_json = os.path.join(args.output_dir, f"{base_name}_analytics.json") if args.export_json else None
 
             start = time.time()
             analytics, annotated = analyzer.process_image_file(
                 image_path=source,
-                output_image_path=out_img,
+                output_image_path=None,
                 output_json_path=out_json,
                 conf=args.conf,
             )
             elapsed = time.time() - start
+
+            if args.linkedin:
+                annotated = analyzer.render_linkedin_canvas(annotated, analytics, canvas_size=1080)
+
+            if out_img:
+                cv2.imwrite(out_img, annotated)
 
             print_rich_dashboard(
                 analytics=analytics,

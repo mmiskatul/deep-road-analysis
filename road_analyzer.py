@@ -426,6 +426,88 @@ class RoadAnalyzer:
 
         return annotated
 
+    def render_linkedin_canvas(
+        self,
+        annotated_frame: np.ndarray,
+        analytics: Dict[str, Any],
+        canvas_size: int = 1080,
+    ) -> np.ndarray:
+        """
+        Wraps the video frame into a viral, professional 1:1 LinkedIn format video (1080x1080)
+        featuring branded header title cards, tech stack pills, real-time KPI tiles, and author watermark.
+        """
+        canvas = np.full((canvas_size, canvas_size, 3), (18, 20, 26), dtype=np.uint8)
+
+        # 1. Header Area (0 to 190)
+        # Top gradient/accent line
+        cv2.line(canvas, (0, 3), (canvas_size, 3), (0, 255, 180), 4, cv2.LINE_AA)
+
+        # Project Title
+        title = "AI DEEP ROAD SCENE PERCEPTION"
+        cv2.putText(canvas, title, (40, 58), cv2.FONT_HERSHEY_DUPLEX, 1.15, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # Subtitle
+        sub = "Real-Time Multi-Object Tracking • Forward Collision Risk • Scene Analytics"
+        cv2.putText(canvas, sub, (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (170, 185, 205), 1, cv2.LINE_AA)
+
+        # Tech Badges (YOLOv8, ByteTrack, OpenCV, Python)
+        badges = ["YOLO VISION", "BYTETRACK", "COLLISION AI", "REAL-TIME"]
+        bx = 40
+        by = 130
+        for b in badges:
+            (bw, bh), _ = cv2.getTextSize(b, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            cv2.rectangle(canvas, (bx, by), (bx + bw + 18, by + 28), (32, 38, 52), -1)
+            cv2.rectangle(canvas, (bx, by), (bx + bw + 18, by + 28), (55, 75, 105), 1, cv2.LINE_AA)
+            cv2.putText(canvas, b, (bx + 9, by + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 240, 255), 1, cv2.LINE_AA)
+            bx += bw + 28
+
+        # 2. Centered 16:9 Video Canvas (y=190 to y=798)
+        video_h = int(canvas_size * 9 / 16)  # 608 px
+        video_y1 = 190
+        video_y2 = video_y1 + video_h
+        resized_frame = cv2.resize(annotated_frame, (canvas_size, video_h), interpolation=cv2.INTER_LINEAR)
+        canvas[video_y1:video_y2, 0:canvas_size] = resized_frame
+
+        # Separator borders
+        cv2.line(canvas, (0, video_y1), (canvas_size, video_y1), (45, 55, 75), 2, cv2.LINE_AA)
+        cv2.line(canvas, (0, video_y2), (canvas_size, video_y2), (45, 55, 75), 2, cv2.LINE_AA)
+
+        # 3. Footer Telemetry & Branding Area (y=798 to 1080)
+        summary = analytics["summary"]
+
+        cw = (canvas_size - 40 * 2 - 20 * 3) // 4  # approx 235px each
+        cy1 = 825
+        cy2 = 980
+
+        safety_color = (0, 255, 120)
+        if summary["safety_status"] == "CRITICAL ALERT":
+            safety_color = (0, 0, 255)
+        elif summary["safety_status"] == "PROXIMITY WARNING":
+            safety_color = (0, 160, 255)
+
+        cards = [
+            ("TOTAL VEHICLES", str(summary["total_vehicles"]), (255, 195, 30)),
+            ("PEDESTRIANS / VRU", str(summary["vulnerable_road_users"]), (90, 245, 120)),
+            ("TRAFFIC DENSITY", summary["traffic_density"], (30, 180, 255)),
+            ("SAFETY SCORE", f"{summary['road_safety_score']}/100", safety_color),
+        ]
+
+        for idx, (label, val, accent) in enumerate(cards):
+            cx1 = 40 + idx * (cw + 20)
+            cx2 = cx1 + cw
+            cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (25, 30, 42), -1)
+            cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (45, 55, 75), 1, cv2.LINE_AA)
+            cv2.line(canvas, (cx1, cy1), (cx2, cy1), accent, 3, cv2.LINE_AA)
+            cv2.putText(canvas, label, (cx1 + 14, cy1 + 34), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 165, 185), 1, cv2.LINE_AA)
+            font_scale = 0.85 if len(val) <= 5 else 0.65
+            cv2.putText(canvas, val, (cx1 + 14, cy1 + 95), cv2.FONT_HERSHEY_DUPLEX, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # Bottom Watermark Bar
+        watermark = "AI Autonomous Perception & Computer Vision  |  GitHub: mmiskatul/deep-road-analysis"
+        cv2.putText(canvas, watermark, (40, 1035), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (140, 155, 180), 1, cv2.LINE_AA)
+
+        return canvas
+
     def process_image_file(
         self,
         image_path: str,
