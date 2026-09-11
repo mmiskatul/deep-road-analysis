@@ -134,6 +134,45 @@ def print_rich_dashboard(analytics: dict, elapsed_time: float, output_img_path: 
         print("=" * 60 + "\n")
 
 
+def ensure_h264_encoding(video_path: str) -> str:
+    """
+    Re-encodes video into pure H.264 (libx264, yuv420p, +faststart)
+    for guaranteed playback across web browsers, QuickTime, iOS, and Android.
+    """
+    if not video_path or not os.path.exists(video_path):
+        return video_path
+    try:
+        import subprocess
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+        dir_name = os.path.dirname(os.path.abspath(video_path))
+        base_stem = Path(video_path).stem
+        ext = Path(video_path).suffix
+        temp_h264 = os.path.join(dir_name, f"{base_stem}_temp_h264{ext}")
+
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-i", video_path,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "fast",
+            "-crf", "20",
+            "-movflags", "+faststart",
+            temp_h264
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(temp_h264) and os.path.getsize(temp_h264) > 0:
+            try:
+                os.replace(temp_h264, video_path)
+            except Exception:
+                return temp_h264
+            return video_path
+    except Exception:
+        pass
+    return video_path
+
+
 def process_video(
     analyzer: RoadAnalyzer,
     video_source: Any,
@@ -304,6 +343,9 @@ def process_video(
             writer.release()
         if show_view:
             cv2.destroyAllWindows()
+
+    if output_path and os.path.exists(output_path):
+        output_path = ensure_h264_encoding(output_path)
 
     total_time = time.time() - start_total
     avg_fps = frame_idx / max(1e-5, total_time)

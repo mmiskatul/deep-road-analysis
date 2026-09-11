@@ -14,9 +14,10 @@ output/
 runs/
 
 # IDE & OS files
-.vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+config.bat
+node_modules
