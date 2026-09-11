@@ -244,31 +244,50 @@ class RoadAnalyzer:
         show_hud_banner: bool = True,
     ) -> np.ndarray:
         """
-        Renders a futuristic, high-aesthetic Heads-Up Display (HUD) on the image.
+        Renders a sleek, ultra-modern autonomous driving HUD directly on the video.
+        Features Tesla-style lane trajectory, floating glassmorphism dynamic pills,
+        and high-tech cyber corner-bracket bounding boxes.
         """
         annotated = image.copy()
         height, width = annotated.shape[:2]
 
-        # 1. Draw Ego-Vehicle Danger Corridor
+        # 1. Ultra-Sleek Autonomous Lane Trajectory (stops well before the hood/windshield)
         if show_danger_zone:
-            overlay = annotated.copy()
-            pts = np.array([
-                [int(width * 0.40), int(height * 0.58)],
-                [int(width * 0.60), int(height * 0.58)],
-                [int(width * 0.85), int(height * 0.98)],
-                [int(width * 0.15), int(height * 0.98)],
-            ], np.int32)
-            cv2.fillPoly(overlay, [pts], (20, 80, 20))
-            
-            if analytics["summary"]["critical_hazards"] > 0:
-                cv2.polylines(annotated, [pts], True, (0, 0, 255), 2, cv2.LINE_AA)
-            else:
-                cv2.polylines(annotated, [pts], True, (0, 255, 120), 1, cv2.LINE_AA)
-            cv2.addWeighted(overlay, 0.15, annotated, 0.85, 0, annotated)
+            # Trajectory sits purely on the forward road plane
+            y_horizon = int(height * 0.53)
+            y_ground = int(height * 0.74)  # Stops before the car dashboard/hood
 
-        # 2. Draw Sleek Cyber Bounding Boxes with Corner Accents
-        # Draw subtle box tints first
-        box_overlay = annotated.copy()
+            pts_corridor = np.array([
+                [int(width * 0.43), y_horizon],
+                [int(width * 0.57), y_horizon],
+                [int(width * 0.78), y_ground],
+                [int(width * 0.22), y_ground],
+            ], np.int32)
+
+            corridor_overlay = annotated.copy()
+            # Soft neon cyan-green tinted path
+            path_color = (0, 240, 160) if analytics["summary"]["critical_hazards"] == 0 else (0, 60, 255)
+            cv2.fillPoly(corridor_overlay, [pts_corridor], (path_color[0]//5, path_color[1]//5, path_color[2]//5))
+            cv2.addWeighted(corridor_overlay, 0.22, annotated, 0.78, 0, annotated)
+
+            # Draw sleek dashed / glowing lane boundaries
+            cv2.polylines(annotated, [pts_corridor], True, path_color, 1, cv2.LINE_AA)
+
+            # Draw futuristic chevron trajectory markers inside the lane path
+            for frac in [0.25, 0.50, 0.75]:
+                y_c = int(y_horizon + (y_ground - y_horizon) * frac)
+                half_w = int((width * 0.07) + (width * 0.20) * frac)
+                cx = int(width * 0.50)
+                chev_pts = np.array([
+                    [cx - half_w // 2, y_c + 6],
+                    [cx, y_c - 4],
+                    [cx + half_w // 2, y_c + 6],
+                ], np.int32)
+                cv2.polylines(annotated, [chev_pts], False, path_color, 1, cv2.LINE_AA)
+
+        # 2. Modern Cyber Bounding Boxes (Tesla / Mobileye Autonomous Vision Style)
+        # Soft box tint for depth
+        tint_overlay = annotated.copy()
         for det in analytics["detections"]:
             x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
             cls_name = det["class"]
@@ -282,12 +301,10 @@ class RoadAnalyzer:
             else:
                 box_color = CLASS_COLORS.get(cls_name, DEFAULT_COLOR)
 
-            # Soft tinted fill
-            cv2.rectangle(box_overlay, (x1, y1), (x2, y2), box_color, -1)
+            cv2.rectangle(tint_overlay, (x1, y1), (x2, y2), box_color, -1)
+        cv2.addWeighted(tint_overlay, 0.07, annotated, 0.93, 0, annotated)
 
-        cv2.addWeighted(box_overlay, 0.08, annotated, 0.92, 0, annotated)
-
-        # Draw box outlines, corner brackets and badges
+        # Sleek brackets, target pips and floating badges
         for det in analytics["detections"]:
             x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
             cls_name = det["class"]
@@ -298,19 +315,19 @@ class RoadAnalyzer:
 
             if is_hazard and hazard_level == "CRITICAL":
                 box_color = (0, 0, 255)
-                c_thick = 3
+                c_thick = 2
             elif is_hazard and hazard_level == "CAUTION":
                 box_color = (0, 140, 255)
                 c_thick = 2
             else:
-                box_color = CLASS_COLORS.get(cls_name, DEFAULT_COLOR)
+                box_color = CLASS_COLORS.get(cls_name, (0, 240, 255))
                 c_thick = 2
 
-            # Thin perimeter border
+            # Very thin hairline border
             cv2.rectangle(annotated, (x1, y1), (x2, y2), box_color, 1, cv2.LINE_AA)
 
-            # High-tech Cyber Corner Brackets
-            c_len = max(5, min(16, (x2 - x1) // 4, (y2 - y1) // 4))
+            # Prominent corner brackets (Mobileye / Tesla vision style)
+            c_len = max(6, min(16, (x2 - x1) // 4, (y2 - y1) // 4))
             # Top-Left
             cv2.line(annotated, (x1, y1), (x1 + c_len, y1), box_color, c_thick, cv2.LINE_AA)
             cv2.line(annotated, (x1, y1), (x1, y1 + c_len), box_color, c_thick, cv2.LINE_AA)
@@ -324,105 +341,84 @@ class RoadAnalyzer:
             cv2.line(annotated, (x2, y2), (x2 - c_len, y2), box_color, c_thick, cv2.LINE_AA)
             cv2.line(annotated, (x2, y2), (x2, y2 - c_len), box_color, c_thick, cv2.LINE_AA)
 
-            # Label badge
+            # Floating Modern Pill Badge
             id_prefix = f"#{track_id} " if track_id is not None else ""
             label = f"{id_prefix}{cls_name.upper()} {int(conf * 100)}%"
             if is_hazard:
                 label += f" [{hazard_level}]"
 
-            (text_w, text_h), baseline = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.44, 1
-            )
-            badge_y1 = max(0, y1 - text_h - 7)
-            badge_y2 = y1
-            badge_x1 = x1
-            badge_x2 = min(width, x1 + text_w + 10)
+            (t_w, t_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
+            b_y2 = max(t_h + 8, y1 - 3)
+            b_y1 = b_y2 - t_h - 7
+            b_x1 = max(2, x1)
+            b_x2 = min(width - 2, x1 + t_w + 14)
 
-            # Badge background with slight rounding feel
-            cv2.rectangle(
-                annotated,
-                (badge_x1, badge_y1),
-                (badge_x2, badge_y2),
-                box_color,
-                -1,
-            )
-            # Badge text
-            text_color = (0, 0, 0) if (box_color[0]*0.299 + box_color[1]*0.587 + box_color[2]*0.114) > 130 else (255, 255, 255)
+            # Dark translucent pill background
+            pill_overlay = annotated.copy()
+            cv2.rectangle(pill_overlay, (b_x1, b_y1), (b_x2, b_y2), (18, 22, 28), -1)
+            cv2.addWeighted(pill_overlay, 0.85, annotated, 0.15, 0, annotated)
+
+            # Pill border matching object category
+            cv2.rectangle(annotated, (b_x1, b_y1), (b_x2, b_y2), box_color, 1, cv2.LINE_AA)
+
+            # High-contrast label text
             cv2.putText(
                 annotated,
                 label,
-                (badge_x1 + 5, badge_y2 - 3),
+                (b_x1 + 7, b_y2 - 3),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.44,
-                text_color,
-                1,
-                cv2.LINE_AA,
-            )
-
-        # 3. Top Telemetry Glassmorphism HUD Banner
-        if show_hud_banner:
-            banner_h = 68
-            banner_overlay = annotated.copy()
-            cv2.rectangle(banner_overlay, (0, 0), (width, banner_h), (18, 20, 24), -1)
-            cv2.addWeighted(banner_overlay, 0.82, annotated, 0.18, 0, annotated)
-
-            # Glowing bottom accent line for banner
-            summary = analytics["summary"]
-            status_color = (0, 255, 120)
-            if summary["safety_status"] == "CRITICAL ALERT":
-                status_color = (0, 0, 255)
-            elif summary["safety_status"] == "PROXIMITY WARNING":
-                status_color = (0, 160, 255)
-
-            cv2.line(annotated, (0, banner_h), (width, banner_h), status_color, 2, cv2.LINE_AA)
-
-            # Title
-            cv2.putText(
-                annotated,
-                "DEEP ROAD ANALYSIS // AI VISION",
-                (20, 24),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.62,
+                0.40,
                 (255, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
-
-            # Metric telemetry tags
-            metrics_line = (
-                f"VEHICLES: {summary['total_vehicles']}  |  "
-                f"PEDESTRIANS/VRU: {summary['vulnerable_road_users']}  |  "
-                f"SIGNS/LIGHTS: {summary['infrastructure_elements']}  |  "
-                f"DENSITY: {summary['traffic_density']}  |  "
-                f"SAFETY SCORE: {summary['road_safety_score']}/100"
-            )
-            cv2.putText(
-                annotated,
-                metrics_line,
-                (20, 52),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.48,
-                (210, 215, 220),
                 1,
                 cv2.LINE_AA,
             )
 
-            # Status Badge on Top Right
-            status_text = f"STATUS: {summary['safety_status']}"
-            (st_w, st_h), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-            st_x = width - st_w - 25
-            cv2.rectangle(annotated, (st_x - 10, 14), (width - 15, 48), (28, 32, 40), -1)
-            cv2.rectangle(annotated, (st_x - 10, 14), (width - 15, 48), status_color, 1)
-            cv2.putText(
-                annotated,
-                status_text,
-                (st_x, 37),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                status_color,
-                2,
-                cv2.LINE_AA,
-            )
+        # 3. Floating Glassmorphic Dynamic Pills (No clunky top banner!)
+        if show_hud_banner:
+            summary = analytics["summary"]
+
+            # --- Top-Left Floating Dynamic Glass Pill ---
+            pill_w = 460
+            pill_h = 36
+            px1, py1 = 20, 18
+            px2, py2 = px1 + pill_w, py1 + pill_h
+
+            pill_bg = annotated.copy()
+            cv2.rectangle(pill_bg, (px1, py1), (px2, py2), (12, 16, 22), -1)
+            cv2.addWeighted(pill_bg, 0.78, annotated, 0.22, 0, annotated)
+            cv2.rectangle(annotated, (px1, py1), (px2, py2), (40, 55, 75), 1, cv2.LINE_AA)
+
+            # Glowing status indicator dot
+            cv2.circle(annotated, (px1 + 16, py1 + 18), 4, (0, 255, 180), -1, cv2.LINE_AA)
+            cv2.putText(annotated, "AUTONOMOUS VISION", (px1 + 26, py1 + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 180), 1, cv2.LINE_AA)
+
+            # Telemetry metrics line inside the pill
+            telem_txt = f"V: {summary['total_vehicles']}  |  VRU: {summary['vulnerable_road_users']}  |  SIGNS: {summary['infrastructure_elements']}  |  {summary['traffic_density']}"
+            cv2.putText(annotated, telem_txt, (px1 + 195, py1 + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 230, 240), 1, cv2.LINE_AA)
+
+            # --- Top-Right Floating Safety Shield Pill ---
+            status_txt = f"SHIELD: {summary['road_safety_score']}%"
+            (st_w, st_h), _ = cv2.getTextSize(status_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+            s_px2 = width - 20
+            s_px1 = s_px2 - st_w - 34
+            s_py1, s_py2 = 18, 18 + pill_h
+
+            s_bg = annotated.copy()
+            cv2.rectangle(s_bg, (s_px1, s_py1), (s_px2, s_py2), (12, 16, 22), -1)
+            cv2.addWeighted(s_bg, 0.78, annotated, 0.22, 0, annotated)
+
+            shield_color = (0, 255, 120) if summary["road_safety_score"] >= 80 else (0, 160, 255)
+            cv2.rectangle(annotated, (s_px1, s_py1), (s_px2, s_py2), shield_color, 1, cv2.LINE_AA)
+            cv2.circle(annotated, (s_px1 + 14, s_py1 + 18), 4, shield_color, -1, cv2.LINE_AA)
+            cv2.putText(annotated, status_txt, (s_px1 + 24, s_py1 + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+
+            # --- Minimal Bottom Watermark Tag (Bottom-Left) ---
+            bm_text = "AI ROAD PERCEPTION // MMISKATUL"
+            (b_w, b_h), _ = cv2.getTextSize(bm_text, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
+            bm_bg = annotated.copy()
+            cv2.rectangle(bm_bg, (18, height - 32), (28 + b_w, height - 10), (12, 16, 22), -1)
+            cv2.addWeighted(bm_bg, 0.65, annotated, 0.35, 0, annotated)
+            cv2.putText(annotated, bm_text, (23, height - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 160, 180), 1, cv2.LINE_AA)
 
         return annotated
 
