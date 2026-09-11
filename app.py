@@ -6,6 +6,9 @@ or:
     python main.py --web
 """
 
+import utils.http_session
+import utils.transport
+import utils.session
 import os
 import io
 import json
